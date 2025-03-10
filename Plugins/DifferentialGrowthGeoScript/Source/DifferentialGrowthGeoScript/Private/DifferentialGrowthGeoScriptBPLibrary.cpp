@@ -130,6 +130,37 @@ UDynamicMesh* UDifferentialGrowthGeoScriptBPLibrary::SolveConstraints(
 		FVector3VertexAttribute* Forces = static_cast<FVector3VertexAttribute*>(EditMesh.Attributes()->GetAttachedAttribute(ForcesAttributeName));
 		FVector3TriangleAttribute* EdgeLengths = static_cast<FVector3TriangleAttribute*>(EditMesh.Attributes()->GetAttachedAttribute(EdgeLengthAttributeName));
 
+		// Adjust Constraints
+
+		for (int32 TriangleID : EditMesh.TriangleIndicesItr())
+		{
+			UE::Geometry::FIndex3i Triangle = EditMesh.GetTriangle(TriangleID);
+			FVector3d VertexA = EditMesh.GetVertex(Triangle[0]);
+			FVector3d VertexB = EditMesh.GetVertex(Triangle[1]);
+			FVector3d VertexC = EditMesh.GetVertex(Triangle[2]);
+
+			FVector3d MidpointA = (VertexA + VertexB) * .5f;
+			FVector3d MidpointB = (VertexB + VertexC) * .5f;
+			FVector3d MidpointC = (VertexC + VertexA) * .5f;
+
+			float PerlinScale = .1f;
+
+			float ValueA = FMath::PerlinNoise3D(MidpointA * PerlinScale - .5f);
+			float ValueB = FMath::PerlinNoise3D(MidpointB * PerlinScale - .5f);
+			float ValueC = FMath::PerlinNoise3D(MidpointC * PerlinScale - .5f);
+
+			FVector3d TriangleEdgeLengths;
+			EdgeLengths->GetValue(TriangleID, TriangleEdgeLengths);
+
+			float GrowthRate = .05f;
+
+			TriangleEdgeLengths[0] *= 1.0f + (ValueA * .5f + .5f) * (SimDT * Iterations) * GrowthRate;
+			TriangleEdgeLengths[1] *= 1.0f + (ValueB * .5f + .5f) * (SimDT * Iterations) * GrowthRate;
+			TriangleEdgeLengths[2] *= 1.0f + (ValueC * .5f + .5f) * (SimDT * Iterations) * GrowthRate;
+
+			EdgeLengths->SetValue(TriangleID, TriangleEdgeLengths);
+		}
+
 		// Calculate forces
 
 		// Reset Forces
