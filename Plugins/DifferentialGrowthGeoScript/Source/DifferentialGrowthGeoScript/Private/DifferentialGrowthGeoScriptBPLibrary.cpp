@@ -91,6 +91,9 @@ UDynamicMesh* UDifferentialGrowthGeoScriptBPLibrary::SolveConstraints(
 					(VertexB - VertexC).Length(),
 					(VertexC - VertexA).Length()
 				};
+				//TriangleEdgeLengths[0] = TargetEdgeLength;
+				//TriangleEdgeLengths[1] = TargetEdgeLength;
+				//TriangleEdgeLengths[2] = TargetEdgeLength;
 				EdgeLengths->SetValue(TriangleID, TriangleEdgeLengths);
 			}
 
@@ -143,20 +146,40 @@ UDynamicMesh* UDifferentialGrowthGeoScriptBPLibrary::SolveConstraints(
 			FVector3d MidpointB = (VertexB + VertexC) * .5f;
 			FVector3d MidpointC = (VertexC + VertexA) * .5f;
 
-			float PerlinScale = .1f;
-
-			float ValueA = FMath::PerlinNoise3D(MidpointA * PerlinScale - .5f);
-			float ValueB = FMath::PerlinNoise3D(MidpointB * PerlinScale - .5f);
-			float ValueC = FMath::PerlinNoise3D(MidpointC * PerlinScale - .5f);
-
 			FVector3d TriangleEdgeLengths;
 			EdgeLengths->GetValue(TriangleID, TriangleEdgeLengths);
+
+			
+			FVector3d DirectionA = VertexA - VertexB;
+			FVector3d DirectionB = VertexB - VertexC;
+			FVector3d DirectionC = VertexC - VertexA;
+			DirectionA.Normalize();
+			DirectionB.Normalize();
+			DirectionC.Normalize();
+			//DrawDebugLine(World, MidpointA - DirectionA * TriangleEdgeLengths[0] * .25f, MidpointA + DirectionA * TriangleEdgeLengths[0] * .25f, FColor::Purple, true, -1.0f, 0, .1f);
+			//DrawDebugLine(World, MidpointB - DirectionB * TriangleEdgeLengths[1] * .25f, MidpointB + DirectionB * TriangleEdgeLengths[1] * .25f, FColor::Purple, true, -1.0f, 0, .1f);
+			//DrawDebugLine(World, MidpointC - DirectionC * TriangleEdgeLengths[2] * .25f, MidpointC + DirectionC * TriangleEdgeLengths[2] * .25f, FColor::Purple, true, -1.0f, 0, .1f);
+			
+
+			float PerlinScale = .05f;
+
+			//float ValueA = FMath::PerlinNoise3D(MidpointA * PerlinScale - .5f);
+			//float ValueB = FMath::PerlinNoise3D(MidpointB * PerlinScale - .5f);
+			//float ValueC = FMath::PerlinNoise3D(MidpointC * PerlinScale - .5f);
+
+			float ValueA = FMath::Clamp(MidpointA[0] * PerlinScale, -1.0f, 1.0f);
+			float ValueB = FMath::Clamp(MidpointB[0] * PerlinScale, -1.0f, 1.0f);
+			float ValueC = FMath::Clamp(MidpointC[0] * PerlinScale, -1.0f, 1.0f);
 
 			float GrowthRate = .05f;
 
 			TriangleEdgeLengths[0] *= 1.0f + (ValueA * .5f + .5f) * (SimDT * Iterations) * GrowthRate;
 			TriangleEdgeLengths[1] *= 1.0f + (ValueB * .5f + .5f) * (SimDT * Iterations) * GrowthRate;
 			TriangleEdgeLengths[2] *= 1.0f + (ValueC * .5f + .5f) * (SimDT * Iterations) * GrowthRate;
+
+			//DrawDebugPoint(World, MidpointA, 10.0f, FLinearColor::LerpUsingHSV(FLinearColor{ 1, 0, 0, 1 }, FLinearColor{ 0, 0, 1, 1 }, ValueA * .5f + .5f).ToRGBE(), true);
+			//DrawDebugPoint(World, MidpointB, 10.0f, FLinearColor::LerpUsingHSV(FLinearColor{ 1, 0, 0, 1 }, FLinearColor{ 0, 0, 1, 1 }, ValueB * .5f + .5f).ToRGBE(), true);
+			//DrawDebugPoint(World, MidpointC, 10.0f, FLinearColor::LerpUsingHSV(FLinearColor{ 1, 0, 0, 1 }, FLinearColor{ 0, 0, 1, 1 }, ValueC * .5f + .5f).ToRGBE(), true);
 
 			EdgeLengths->SetValue(TriangleID, TriangleEdgeLengths);
 		}
@@ -179,35 +202,40 @@ UDynamicMesh* UDifferentialGrowthGeoScriptBPLibrary::SolveConstraints(
 			FVector3d Force;
 			Forces->GetValue(VertexID, Force);
 			FVector3d OtherPosition {0};
+			FVector3d TargetPosition{ 0 };
 			FVector3d PositionToOtherPosition{ 0 };
+			FVector3d OtherPositionToPosition{ 0 };
 
-			EditMesh.EnumerateVertexEdges(VertexID, [&](int32 EdgeID)
+			EditMesh.EnumerateVertexTriangles(VertexID, [&](int32 TriangleID)
 				{
-					// Many lookups isn't great
-					// Try iterating triangles instead and picking the first edge containing the vertex so we don't double up
-					// Or implement EdgeVertexAttributes - maybe leave this until after we've tested splitting works
-
-					UE::Geometry::FDynamicMesh3::FEdge Edge = EditMesh.GetEdge(EdgeID);
-					int32 OtherVertexID = Edge.Vert[0] != VertexID ? Edge.Vert[0] : Edge.Vert[1];
-					OtherPosition = EditMesh.GetVertex(OtherVertexID);
-
-					int32 TriangleID = Edge.Tri[0];
-
 					UE::Geometry::FIndex3i Triangle = EditMesh.GetTriangle(TriangleID);
-					int32 TriangleEdgeIndex = (
-						Triangle[0] == EdgeID ? 0 :
-						Triangle[1] == EdgeID ? 1 :
+					int32 TriangleVertexIndex = (
+						Triangle[0] == VertexID ? 0 :
+						Triangle[1] == VertexID ? 1 :
 						2
 					);
 
+					int32 OtherVertexID = Triangle[(TriangleVertexIndex + 1) % 3];
+					OtherPosition = EditMesh.GetVertex(OtherVertexID);
+
 					FVector3d TriangleEdgeLengths;
 					EdgeLengths->GetValue(TriangleID, TriangleEdgeLengths);
-					float NewTargetEdgeLength = TriangleEdgeLengths[TriangleEdgeIndex];
+					float NewTargetEdgeLength = TriangleEdgeLengths[TriangleVertexIndex];
+					
+					OtherPositionToPosition = Position - OtherPosition;
+					OtherPositionToPosition.Normalize();
+					OtherPositionToPosition *= NewTargetEdgeLength * .5f;
 
-					PositionToOtherPosition = OtherPosition - Position;
-					float f = PositionToOtherPosition.Length() - NewTargetEdgeLength * .5f;
-					PositionToOtherPosition.Normalize();
-					FVector3d ThisForce = PositionToOtherPosition * f;
+					TargetPosition = OtherPosition + OtherPositionToPosition;
+
+					FVector3d ThisForce = TargetPosition - Position;
+					//ThisForce *= 2.0f;
+
+					//if (VertexID == DebugVertexID)
+					{
+						//DrawDebugLine(World, Position, Position + ThisForce, FColor::Green, true, -1.0f, 0, .1f);
+					}
+
 					Force += ThisForce;
 				}
 			);
@@ -243,7 +271,7 @@ UDynamicMesh* UDifferentialGrowthGeoScriptBPLibrary::SolveConstraints(
 				FVector3d EdgeVertexA = EditMesh.GetVertex(EdgeVertexIDA);
 				FVector3d EdgeVertexB = EditMesh.GetVertex(EdgeVertexIDB);
 
-				if (VertexID == DebugVertexID && TriangleIndex == DebugTriangleIndex)
+				//if (VertexID == DebugVertexID && TriangleIndex == DebugTriangleIndex)
 				{
 					//DrawDebugLine(World, EdgeVertexA, EdgeVertexB, FColor::Green, true);
 				}
@@ -254,7 +282,7 @@ UDynamicMesh* UDifferentialGrowthGeoScriptBPLibrary::SolveConstraints(
 				FVector3d ProjectedPosition = FVector::VectorPlaneProject(Position - EdgeVertexA, EdgeNormal);
 				ProjectedPosition.Normalize();
 
-				if (VertexID == DebugVertexID && TriangleIndex == DebugTriangleIndex)
+				//if (VertexID == DebugVertexID && TriangleIndex == DebugTriangleIndex)
 				{
 					//DrawDebugLine(World, EdgeVertexA, EdgeVertexA + ProjectedPosition, FColor::Blue, true);
 				}
@@ -280,7 +308,7 @@ UDynamicMesh* UDifferentialGrowthGeoScriptBPLibrary::SolveConstraints(
 					FVector3d OppositeProjectedPosition = FVector::VectorPlaneProject(OppositePosition - EdgeVertexA, EdgeNormal);
 					OppositeProjectedPosition.Normalize();
 
-					if (VertexID == DebugVertexID && TriangleIndex == DebugTriangleIndex)
+					//if (VertexID == DebugVertexID && TriangleIndex == DebugTriangleIndex)
 					{
 						//DrawDebugLine(World, EdgeVertexA, EdgeVertexA + OppositeProjectedPosition, FColor::Blue, true);
 					}
@@ -299,10 +327,10 @@ UDynamicMesh* UDifferentialGrowthGeoScriptBPLibrary::SolveConstraints(
 
 					FVector3d RotatedPosition = (Position - EdgeVertexA).RotateAngleAxisRad(ToRotate, EdgeNormal) + EdgeVertexA;
 
-					if (VertexID == DebugVertexID && TriangleIndex == DebugTriangleIndex)
+					//if (VertexID == DebugVertexID && TriangleIndex == DebugTriangleIndex)
 					{
 					//	DrawDebugPoint(World, Position, 10.1f, FColor::Red, true);
-					//	DrawDebugLine(World, Position, RotatedPosition, FColor::Red, true);
+						//DrawDebugLine(World, Position, RotatedPosition, FColor::Red, true);
 					}
 
 					Force += RotatedPosition - Position;
