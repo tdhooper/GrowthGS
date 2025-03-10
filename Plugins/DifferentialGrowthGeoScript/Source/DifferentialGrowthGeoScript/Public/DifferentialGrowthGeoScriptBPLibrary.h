@@ -39,7 +39,8 @@ class UDifferentialGrowthGeoScriptBPLibrary : public UBlueprintFunctionLibrary
 };
 
 
-typedef UE::Geometry::TDynamicMeshVertexAttribute<float, 3> FVector3Attribute;
+typedef UE::Geometry::TDynamicMeshVertexAttribute<float, 3> FVector3VertexAttribute;
+typedef UE::Geometry::TDynamicMeshTriangleAttribute<float, 3> FVector3TriangleAttribute;
 
 //typedef UE::Geometry::TDynamicMeshVertexAttribute<float, 3> FDynamicMeshSolverPreviousPositionAttribute;
 //typedef UE::Geometry::TDynamicMeshVectorOverlay<float, 3, FVector3f> FDynamicMeshSolverForcesOverlay;
