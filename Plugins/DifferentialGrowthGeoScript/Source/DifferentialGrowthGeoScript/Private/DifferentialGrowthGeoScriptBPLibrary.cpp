@@ -27,6 +27,7 @@ UDynamicMesh* UDifferentialGrowthGeoScriptBPLibrary::SolveConstraints(
 	float DragCoefficient,
 	float ForceMultiplier,
 	float TargetEdgeLength,
+	float EdgePullFactor,
 	float GrowthRate,
 	int32 DebugVertexID,
 	int32 DebugTriangleIndex
@@ -38,8 +39,8 @@ UDynamicMesh* UDifferentialGrowthGeoScriptBPLibrary::SolveConstraints(
 
 	// Add attributes 
 
-	const FName VelocityAttributeName = "VelocityAttribute";
-	const FName SimPositionAttributeName = "SimPositionAttribute";
+	//const FName VelocityAttributeName = "VelocityAttribute";
+	const FName PreviousPositionAttributeName = "PreviousPositionAttribute";
 	const FName ForcesAttributeName = "ForcesAttribute";
 	const FName EdgeLengthAttributeName = "EdgeLengthAttribute";
 
@@ -59,23 +60,23 @@ UDynamicMesh* UDifferentialGrowthGeoScriptBPLibrary::SolveConstraints(
 				FrameTimeAccumulator = 0;
 			}
 
-			if (!EditMesh.Attributes()->HasAttachedAttribute(VelocityAttributeName))
+			/*if (!EditMesh.Attributes()->HasAttachedAttribute(VelocityAttributeName))
 			{
 				FVector3VertexAttribute* Velocities = new FVector3VertexAttribute(&EditMesh);
 				EditMesh.Attributes()->AttachAttribute(VelocityAttributeName, Velocities);
-			}
+			}*/
 
-			if (!EditMesh.Attributes()->HasAttachedAttribute(SimPositionAttributeName))
+			if (!EditMesh.Attributes()->HasAttachedAttribute(PreviousPositionAttributeName))
 			{
-				FVector3VertexAttribute* SimPositions = new FVector3VertexAttribute(&EditMesh);
+				FVector3VertexAttribute* PreviousPositions = new FVector3VertexAttribute(&EditMesh);
 
 				for (int32 VertexID : EditMesh.VertexIndicesItr())
 				{
 					FVector3d Position = EditMesh.GetVertex(VertexID);
-					SimPositions->SetValue(VertexID, Position);
+					PreviousPositions->SetValue(VertexID, Position);
 				}
 
-				EditMesh.Attributes()->AttachAttribute(SimPositionAttributeName, SimPositions);
+				EditMesh.Attributes()->AttachAttribute(PreviousPositionAttributeName, PreviousPositions);
 			}
 
 			if (!EditMesh.Attributes()->HasAttachedAttribute(EdgeLengthAttributeName))
@@ -104,8 +105,8 @@ UDynamicMesh* UDifferentialGrowthGeoScriptBPLibrary::SolveConstraints(
 
 			// Get attributes
 
-			FVector3VertexAttribute* Velocities = static_cast<FVector3VertexAttribute*>(EditMesh.Attributes()->GetAttachedAttribute(VelocityAttributeName));
-			FVector3VertexAttribute* SimPositions = static_cast<FVector3VertexAttribute*>(EditMesh.Attributes()->GetAttachedAttribute(SimPositionAttributeName));
+			//FVector3VertexAttribute* Velocities = static_cast<FVector3VertexAttribute*>(EditMesh.Attributes()->GetAttachedAttribute(VelocityAttributeName));
+			FVector3VertexAttribute* PreviousPositions = static_cast<FVector3VertexAttribute*>(EditMesh.Attributes()->GetAttachedAttribute(PreviousPositionAttributeName));
 			FVector3VertexAttribute* Forces = static_cast<FVector3VertexAttribute*>(EditMesh.Attributes()->GetAttachedAttribute(ForcesAttributeName));
 			FVector3TriangleAttribute* EdgeLengths = static_cast<FVector3TriangleAttribute*>(EditMesh.Attributes()->GetAttachedAttribute(EdgeLengthAttributeName));
 
@@ -288,6 +289,7 @@ UDynamicMesh* UDifferentialGrowthGeoScriptBPLibrary::SolveConstraints(
 				}
 			}
 
+			/*
 			float FrameTime = DeltaSeconds;
 			if (FrameTime > .25f)
 			{
@@ -308,6 +310,9 @@ UDynamicMesh* UDifferentialGrowthGeoScriptBPLibrary::SolveConstraints(
 			{
 				return;
 			}
+			*/
+
+			float DT = DeltaSeconds;
 
 			//UE_LOG(LogTemp, Warning, TEXT("Iterations: %d * %f = %f"), Iterations, SimDT, Iterations * SimDT);
 
@@ -342,9 +347,9 @@ UDynamicMesh* UDifferentialGrowthGeoScriptBPLibrary::SolveConstraints(
 					float ValueB = FMath::Clamp(MidpointB[0] * PerlinScale, -1.0f, 1.0f);
 					float ValueC = FMath::Clamp(MidpointC[0] * PerlinScale, -1.0f, 1.0f);
 
-					TriangleEdgeLengths[0] *= 1.0f + (ValueA * .5f + .5f) * (SimDT * Iterations) * GrowthRate;
-					TriangleEdgeLengths[1] *= 1.0f + (ValueB * .5f + .5f) * (SimDT * Iterations) * GrowthRate;
-					TriangleEdgeLengths[2] *= 1.0f + (ValueC * .5f + .5f) * (SimDT * Iterations) * GrowthRate;
+					TriangleEdgeLengths[0] *= 1.0f + (ValueA * .5f + .5f) * DT * GrowthRate;
+					TriangleEdgeLengths[1] *= 1.0f + (ValueB * .5f + .5f) * DT * GrowthRate;
+					TriangleEdgeLengths[2] *= 1.0f + (ValueC * .5f + .5f) * DT * GrowthRate;
 
 					FVector3d Center = (VertexA + VertexB + VertexC) / 3.0f;
 					FVector3d DirectionA = VertexA - VertexB;
@@ -410,11 +415,13 @@ UDynamicMesh* UDifferentialGrowthGeoScriptBPLibrary::SolveConstraints(
 							EdgeLengths->GetValue(TriangleID, TriangleEdgeLengths);
 							float NewTargetEdgeLength = TriangleEdgeLengths[TriangleVertexIndex];
 
+							
 							FVector3d OtherPositionToPosition = Position - OtherPosition;
 							OtherPositionToPosition.Normalize();
-							OtherPositionToPosition *= NewTargetEdgeLength * .5f;
+							OtherPositionToPosition *= NewTargetEdgeLength * (1.0f - EdgePullFactor);
 							TargetPosition = OtherPosition + OtherPositionToPosition;
 							FVector3d ThisForce = TargetPosition - Position;
+							
 
 							/*
 							FVector3d Direction = Position - OtherPosition;
@@ -526,7 +533,8 @@ UDynamicMesh* UDifferentialGrowthGeoScriptBPLibrary::SolveConstraints(
 									float Direction = FMath::Sign((OppositeProjectedPosition ^ ProjectedPosition) | EdgeNormal);
 									ToRotate += (UE_PI - Angle) * Direction * .5f;
 									OppositeTriangleCount++;
-								});
+								}
+							);
 
 							if (OppositeTriangleCount > 0)
 							{
@@ -538,11 +546,14 @@ UDynamicMesh* UDifferentialGrowthGeoScriptBPLibrary::SolveConstraints(
 								//if (VertexID == DebugVertexID && TriangleIndex == DebugTriangleIndex)
 								{
 									//	DrawDebugPoint(World, Position, 10.1f, FColor::Red, true);
-										//DrawDebugLine(World, Position, RotatedPosition, FColor::Red, true);
 								}
 
 								Force += RotatedPosition - Position;
+
+								//DrawDebugLine(World, Position, Position + Force, FColor::Yellow, true, -1.0f, 0, .05f);
 							}
+
+							//Force *= .2f;
 
 							TriangleIndex++;
 						});
@@ -558,41 +569,48 @@ UDynamicMesh* UDifferentialGrowthGeoScriptBPLibrary::SolveConstraints(
 
 				for (int32 VertexID : EditMesh.VertexIndicesItr())
 				{
-					FVector3d SimPosition;
-					SimPositions->GetValue(VertexID, SimPosition);
+					FVector3d PreviousPosition;
+					PreviousPositions->GetValue(VertexID, PreviousPosition);
 
-					FVector3d Velocity;
-					Velocities->GetValue(VertexID, Velocity);
+					FVector3d Position = EditMesh.GetVertex(VertexID);
+					
+					//FVector3d Velocity;
+					//Velocities->GetValue(VertexID, Velocity);
 
 					FVector3d Force;
 					Forces->GetValue(VertexID, Force);
 
-					//DrawDebugLine(World, SimPosition, SimPosition + Force, FColor::Green, true);
-					//DrawDebugLine(World, SimPosition, SimPosition + Velocity, FColor::Red, true);
+					PreviousPositions->SetValue(VertexID, Position);
+					
+					FVector3d Velocity = Position - PreviousPosition;
+					Position = Position + Velocity * (1.0f - DragCoefficient) + Force * (1.0f - DragCoefficient) * DT * DT;
 
-					FVector3d FromPosition{ 0 };
+					DrawDebugLine(World, Position, PreviousPosition + Force, FColor::Green, true);
+					DrawDebugLine(World, Position, Position + Velocity, FColor::Red, true);
 
-					Force -= Velocity * DragCoefficient;
+					EditMesh.SetVertex(VertexID, Position);
 
-					Force *= ForceMultiplier;
+					//Force -= Velocity * DragCoefficient;
 
-					for (int32 i = 0; i < Iterations; ++i)
-					{
-						FromPosition = SimPosition;
+					//Force *= ForceMultiplier;
+
+					//for (int32 i = 0; i < Iterations; ++i)
+					//{
+						//FromPosition = PreviousPosition;
 
 						// Integrate
-						SimPosition += Velocity * SimDT;
-						SimPosition += Force * SimDT * SimDT * 0.5f;
-						Velocity += Force * SimDT;
+						//PreviousPosition += Velocity * DT;
+						//PreviousPosition += Force * DT * DT * 0.5f;
+						//Velocity += Force * DT;
 						//	Velocity *= DragCoefficient;
-					}
+					//}
 
-					SimPositions->SetValue(VertexID, SimPosition);
-					Velocities->SetValue(VertexID, Velocity);
 
-					float Alpha = FrameTimeAccumulator / SimDT;
-					FVector3d Position = FMath::Lerp(FromPosition, SimPosition, Alpha);
-					EditMesh.SetVertex(VertexID, Position);
+					//Velocities->SetValue(VertexID, Velocity);
+
+					//float Alpha = FrameTimeAccumulator / SimDT;
+					//FVector3d Position = FMath::Lerp(FromPosition, PreviousPosition, Alpha);
+					//EditMesh.SetVertex(VertexID, Position);
 				}
 			}
 		}

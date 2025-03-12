@@ -35,7 +35,18 @@ class UDifferentialGrowthGeoScriptBPLibrary : public UBlueprintFunctionLibrary
 	static const FName PreviousPositionAttribute;
 
 	UFUNCTION(BlueprintCallable, Category = "DifferentialGrowthGeoScript")
-	static UDynamicMesh* SolveConstraints(UDynamicMesh* TargetMesh, float DeltaSeconds, float SimulationFramerate, float DragCoefficient, float ForceMultiplier, float TargetEdgeLength, float GrowthRate, int32 DebugVertexID, int32 DebugTriangleIndex);
+	static UDynamicMesh* SolveConstraints(
+		UDynamicMesh* TargetMesh,
+		float DeltaSeconds,
+		float SimulationFramerate,
+		float DragCoefficient,
+		float ForceMultiplier,
+		float TargetEdgeLength,
+		float EdgePullFactor,
+		float GrowthRate,
+		int32 DebugVertexID,
+		int32 DebugTriangleIndex
+	);
 };
 
 
