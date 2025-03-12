@@ -20,7 +20,7 @@ float UDifferentialGrowthGeoScriptBPLibrary::DifferentialGrowthGeoScriptSampleFu
 // TODO: Move solver into an UActorComponent
 float FrameTimeAccumulator = 0.0f;
 
-UDynamicMesh* UDifferentialGrowthGeoScriptBPLibrary::SolveConstraints(
+UDynamicMesh* SolveConstraintsStep(
 	UDynamicMesh* TargetMesh,
 	float DeltaSeconds,
 	float SimulationFramerate,
@@ -289,32 +289,7 @@ UDynamicMesh* UDifferentialGrowthGeoScriptBPLibrary::SolveConstraints(
 				}
 			}
 
-			/*
-			float FrameTime = DeltaSeconds;
-			if (FrameTime > .25f)
-			{
-				FrameTime = .25f;
-			}
-
-			//UE_LOG(LogTemp, Warning, TEXT("FrameTime: %f"), DeltaSeconds);
-
-			FrameTimeAccumulator += FrameTime;
-
-			float SimDT = 1.0f / SimulationFramerate;
-
-			int32 Iterations = (int32)(FrameTimeAccumulator / SimDT);
-
-			FrameTimeAccumulator -= SimDT * (float)Iterations;
-
-			if (Iterations == 0)
-			{
-				return;
-			}
-			*/
-
 			float DT = DeltaSeconds;
-
-			//UE_LOG(LogTemp, Warning, TEXT("Iterations: %d * %f = %f"), Iterations, SimDT, Iterations * SimDT);
 
 			FlushPersistentDebugLines(World);
 
@@ -646,5 +621,51 @@ UDynamicMesh* UDifferentialGrowthGeoScriptBPLibrary::SolveConstraints(
 
 
 	
+	return TargetMesh;
+}
+
+UDynamicMesh* UDifferentialGrowthGeoScriptBPLibrary::SolveConstraints(
+	UDynamicMesh* TargetMesh,
+	float DeltaSeconds,
+	float SimulationFramerate,
+	float DragCoefficient,
+	float ForceMultiplier,
+	float TargetEdgeLength,
+	float EdgePullFactor,
+	float GrowthRate,
+	int32 DebugVertexID,
+	int32 DebugTriangleIndex
+)
+{
+	float SimDT = 1.0f / SimulationFramerate;
+
+	int MaxSteps = 3;
+	float FrameTime = FMath::Min(DeltaSeconds, SimDT * MaxSteps);
+
+	FrameTimeAccumulator += FrameTime;
+
+	int Iterations = 0;
+
+	while (FrameTimeAccumulator > SimDT)
+	{
+		TargetMesh = SolveConstraintsStep(
+			TargetMesh,
+			SimDT,
+			SimulationFramerate,
+			DragCoefficient,
+			ForceMultiplier,
+			TargetEdgeLength,
+			EdgePullFactor,
+			GrowthRate,
+			DebugVertexID,
+			DebugTriangleIndex
+		);
+
+		FrameTimeAccumulator -= SimDT;
+		Iterations++;
+	}
+
+	//UE_LOG(LogTemp, Warning, TEXT("Iterations: %d"), Iterations);
+
 	return TargetMesh;
 }
