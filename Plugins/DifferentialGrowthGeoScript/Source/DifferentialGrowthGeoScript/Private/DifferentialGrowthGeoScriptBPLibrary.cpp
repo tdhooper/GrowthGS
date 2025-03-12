@@ -111,195 +111,203 @@ UDynamicMesh* SolveConstraintsStep(
 			FVector3TriangleAttribute* EdgeLengths = static_cast<FVector3TriangleAttribute*>(EditMesh.Attributes()->GetAttachedAttribute(EdgeLengthAttributeName));
 
 
-			{
-				// Split long edges
+			// Split long edges
 
+			// TODO: Paralellise
+			// pass 1 identifies edges to split in parallell
+			// pass 2 does splits
+			// pass 3 updates edge data in parallel
+
+			for (int32 EdgeID : EditMesh.EdgeIndicesItr())
+			{
 				TRACE_CPUPROFILER_EVENT_SCOPE_STR("Split Long Edges");
 
-				for (int32 EdgeID : EditMesh.EdgeIndicesItr())
+				FVector3d TriangleEdgeLengths;
+
+				UE::Geometry::FDynamicMesh3::FEdge Edge = EditMesh.GetEdge(EdgeID);
+				UE::Geometry::FIndex3i Triangle = EditMesh.GetTriangle(Edge.Tri[0]);
+
+				FVector3d VertexA = EditMesh.GetVertex(Triangle.A);
+				FVector3d VertexB = EditMesh.GetVertex(Triangle.B);
+				FVector3d VertexC = EditMesh.GetVertex(Triangle.C);
+
+				TriangleEdgeLengths[0] = (VertexA - VertexB).Length();
+				TriangleEdgeLengths[1] = (VertexB - VertexC).Length();
+				TriangleEdgeLengths[2] = (VertexC - VertexA).Length();
+
+				int TriangleEdgeIndex = IndexUtil::FindEdgeIndexInTri(Edge.Vert.A, Edge.Vert.B, Triangle);
+				float EdgeLengthA = TriangleEdgeLengths[TriangleEdgeIndex];
+				float EdgeLengthB = TriangleEdgeLengths[(TriangleEdgeIndex + 1) % 3];
+				float EdgeLengthC = TriangleEdgeLengths[(TriangleEdgeIndex + 2) % 3];
+
+				if (EdgeLengthA < TargetEdgeLength || EdgeLengthA < EdgeLengthB || EdgeLengthA < EdgeLengthC)
 				{
+					continue;
+				}
 
-					FVector3d TriangleEdgeLengths;
+				UE::Geometry::FIndex3i TriangleA = EditMesh.GetTriangle(Edge.Tri[0]);
+				UE::Geometry::FIndex3i TriangleB;
 
-					UE::Geometry::FDynamicMesh3::FEdge Edge = EditMesh.GetEdge(EdgeID);
-					UE::Geometry::FIndex3i Triangle = EditMesh.GetTriangle(Edge.Tri[0]);
+				if (Edge.Tri[1] != UE::Geometry::FDynamicMesh3::InvalidID)
+				{
+					TriangleB = EditMesh.GetTriangle(Edge.Tri[1]);
+				}
 
-					FVector3d VertexA = EditMesh.GetVertex(Triangle.A);
-					FVector3d VertexB = EditMesh.GetVertex(Triangle.B);
-					FVector3d VertexC = EditMesh.GetVertex(Triangle.C);
+				int VtxA = Edge.Vert.A;
+				int VtxB = Edge.Vert.B;
+				int VtxC = IndexUtil::OrientTriEdgeAndFindOtherVtx(VtxA, VtxB, TriangleA);
+				int VtxD;
 
-					TriangleEdgeLengths[0] = (VertexA - VertexB).Length();
-					TriangleEdgeLengths[1] = (VertexB - VertexC).Length();
-					TriangleEdgeLengths[2] = (VertexC - VertexA).Length();
+				if (Edge.Tri[1] != UE::Geometry::FDynamicMesh3::InvalidID)
+				{
+					VtxD = IndexUtil::FindTriOtherVtx(VtxA, VtxB, TriangleB);
+				}
 
-					int TriangleEdgeIndex = IndexUtil::FindEdgeIndexInTri(Edge.Vert.A, Edge.Vert.B, Triangle);
-					float EdgeLengthA = TriangleEdgeLengths[TriangleEdgeIndex];
-					float EdgeLengthB = TriangleEdgeLengths[(TriangleEdgeIndex + 1) % 3];
-					float EdgeLengthC = TriangleEdgeLengths[(TriangleEdgeIndex + 2) % 3];
+				EdgeLengths->GetValue(Edge.Tri[0], TriangleEdgeLengths);
+				float TriAEdgeLengthAB = TriangleEdgeLengths[IndexUtil::FindEdgeIndexInTri(VtxA, VtxB, TriangleA)];
+				float TriAEdgeLengthBC = TriangleEdgeLengths[IndexUtil::FindEdgeIndexInTri(VtxB, VtxC, TriangleA)];
+				float TriAEdgeLengthCA = TriangleEdgeLengths[IndexUtil::FindEdgeIndexInTri(VtxC, VtxA, TriangleA)];
 
-					if (EdgeLengthA < TargetEdgeLength || EdgeLengthA < EdgeLengthB || EdgeLengthA < EdgeLengthC)
-					{
-						continue;
-					}
-
-					UE::Geometry::FIndex3i TriangleA = EditMesh.GetTriangle(Edge.Tri[0]);
-					UE::Geometry::FIndex3i TriangleB;
-
-					if (Edge.Tri[1] != UE::Geometry::FDynamicMesh3::InvalidID)
-					{
-						TriangleB = EditMesh.GetTriangle(Edge.Tri[1]);
-					}
-
-					int VtxA = Edge.Vert.A;
-					int VtxB = Edge.Vert.B;
-					int VtxC = IndexUtil::OrientTriEdgeAndFindOtherVtx(VtxA, VtxB, TriangleA);
-					int VtxD;
-
-					if (Edge.Tri[1] != UE::Geometry::FDynamicMesh3::InvalidID)
-					{
-						VtxD = IndexUtil::FindTriOtherVtx(VtxA, VtxB, TriangleB);
-					}
-
-					EdgeLengths->GetValue(Edge.Tri[0], TriangleEdgeLengths);
-					float TriAEdgeLengthAB = TriangleEdgeLengths[IndexUtil::FindEdgeIndexInTri(VtxA, VtxB, TriangleA)];
-					float TriAEdgeLengthBC = TriangleEdgeLengths[IndexUtil::FindEdgeIndexInTri(VtxB, VtxC, TriangleA)];
-					float TriAEdgeLengthCA = TriangleEdgeLengths[IndexUtil::FindEdgeIndexInTri(VtxC, VtxA, TriangleA)];
-
-					float TriBEdgeLengthAB;
-					float TriBEdgeLengthBD;
-					float TriBEdgeLengthDA;
-					if (Edge.Tri[1] != UE::Geometry::FDynamicMesh3::InvalidID)
-					{
-						EdgeLengths->GetValue(Edge.Tri[1], TriangleEdgeLengths);
-						TriBEdgeLengthAB = TriangleEdgeLengths[IndexUtil::FindEdgeIndexInTri(VtxA, VtxB, TriangleB)];
-						TriBEdgeLengthBD = TriangleEdgeLengths[IndexUtil::FindEdgeIndexInTri(VtxB, VtxD, TriangleB)];
-						TriBEdgeLengthDA = TriangleEdgeLengths[IndexUtil::FindEdgeIndexInTri(VtxD, VtxA, TriangleB)];
-					}
+				float TriBEdgeLengthAB;
+				float TriBEdgeLengthBD;
+				float TriBEdgeLengthDA;
+				if (Edge.Tri[1] != UE::Geometry::FDynamicMesh3::InvalidID)
+				{
+					EdgeLengths->GetValue(Edge.Tri[1], TriangleEdgeLengths);
+					TriBEdgeLengthAB = TriangleEdgeLengths[IndexUtil::FindEdgeIndexInTri(VtxA, VtxB, TriangleB)];
+					TriBEdgeLengthBD = TriangleEdgeLengths[IndexUtil::FindEdgeIndexInTri(VtxB, VtxD, TriangleB)];
+					TriBEdgeLengthDA = TriangleEdgeLengths[IndexUtil::FindEdgeIndexInTri(VtxD, VtxA, TriangleB)];
+				}
 
 
-					UE::Geometry::FDynamicMesh3::FEdgeSplitInfo SplitInfo;
-					UE::Geometry::EMeshResult Result = EditMesh.SplitEdge(Edge.Vert[0], Edge.Vert[1], SplitInfo);
-					if (Result != UE::Geometry::EMeshResult::Ok)
-					{
-						continue;
-					}
+				UE::Geometry::FDynamicMesh3::FEdgeSplitInfo SplitInfo;
+				UE::Geometry::EMeshResult Result = EditMesh.SplitEdge(Edge.Vert[0], Edge.Vert[1], SplitInfo);
+				if (Result != UE::Geometry::EMeshResult::Ok)
+				{
+					continue;
+				}
 
-					int VtxF = SplitInfo.NewVertex;
+				int VtxF = SplitInfo.NewVertex;
 
-					// Update edge attributes
-					// (attributes for new vertex is interpolated automatically)
+				// Update edge attributes
+				// (attributes for new vertex is interpolated automatically)
 
-					//UE_LOG(LogTemp, Warning, TEXT("EdgeIndexInTri: %f"), IndexUtil::FindEdgeIndexInTri(VtxA, VtxB, OriginalTriangleA));
-					//UE_LOG(LogTemp, Warning, TEXT("TriangleEdgeLengths: %f %f %f"), TriangleEdgeLengths[0], TriangleEdgeLengths[1], TriangleEdgeLengths[2]);
-					//UE_LOG(LogTemp, Warning, TEXT("OriginalTriangleASplitEdgeLength: %f"), OriginalTriangleASplitEdgeLength);
+				//UE_LOG(LogTemp, Warning, TEXT("EdgeIndexInTri: %f"), IndexUtil::FindEdgeIndexInTri(VtxA, VtxB, OriginalTriangleA));
+				//UE_LOG(LogTemp, Warning, TEXT("TriangleEdgeLengths: %f %f %f"), TriangleEdgeLengths[0], TriangleEdgeLengths[1], TriangleEdgeLengths[2]);
+				//UE_LOG(LogTemp, Warning, TEXT("OriginalTriangleASplitEdgeLength: %f"), OriginalTriangleASplitEdgeLength);
 
-					UE::Geometry::FIndex3i OriginalTriangleA = EditMesh.GetTriangle(SplitInfo.OriginalTriangles.A);
-					UE::Geometry::FIndex3i OriginalTriangleB;
-					if (!SplitInfo.bIsBoundary)
-					{
-						OriginalTriangleB = EditMesh.GetTriangle(SplitInfo.OriginalTriangles.B);
-					}
+				UE::Geometry::FIndex3i OriginalTriangleA = EditMesh.GetTriangle(SplitInfo.OriginalTriangles.A);
+				UE::Geometry::FIndex3i OriginalTriangleB;
+				if (!SplitInfo.bIsBoundary)
+				{
+					OriginalTriangleB = EditMesh.GetTriangle(SplitInfo.OriginalTriangles.B);
+				}
 
-					EdgeLengths->GetValue(SplitInfo.OriginalTriangles.A, TriangleEdgeLengths);
+				EdgeLengths->GetValue(SplitInfo.OriginalTriangles.A, TriangleEdgeLengths);
 
-					// Original triangle A shrunk edge
+				// Original triangle A shrunk edge
+				TriangleEdgeLengths[
+					IndexUtil::FindEdgeIndexInTri(VtxA, VtxF, OriginalTriangleA)
+				] = TriAEdgeLengthAB * .5f;
+
+				// Original triangle A new edge
+				TriangleEdgeLengths[
+					IndexUtil::FindEdgeIndexInTri(VtxC, VtxF, OriginalTriangleA)
+				] = TriAEdgeLengthAB * .5f;
+
+				// Original triangle A unmodified edge
+				TriangleEdgeLengths[
+					IndexUtil::FindEdgeIndexInTri(VtxC, VtxA, OriginalTriangleA)
+				] = TriAEdgeLengthCA;
+
+				EdgeLengths->SetValue(SplitInfo.OriginalTriangles.A, TriangleEdgeLengths);
+
+
+				if (!SplitInfo.bIsBoundary)
+				{
+					EdgeLengths->GetValue(SplitInfo.OriginalTriangles.B, TriangleEdgeLengths);
+
+					// Original triangle B shrunk edge
 					TriangleEdgeLengths[
-						IndexUtil::FindEdgeIndexInTri(VtxA, VtxF, OriginalTriangleA)
-					] = TriAEdgeLengthAB * .5f;
+						IndexUtil::FindEdgeIndexInTri(VtxA, VtxF, OriginalTriangleB)
+					] = TriBEdgeLengthAB * .5f;
 
-					// Original triangle A new edge
+					// Original triangle B new edge
 					TriangleEdgeLengths[
-						IndexUtil::FindEdgeIndexInTri(VtxC, VtxF, OriginalTriangleA)
-					] = TriAEdgeLengthAB * .5f;
+						IndexUtil::FindEdgeIndexInTri(VtxD, VtxF, OriginalTriangleB)
+					] = TriBEdgeLengthAB * .5f;
 
-					// Original triangle A unmodified edge
+					// Original triangle B unmodified edge
 					TriangleEdgeLengths[
-						IndexUtil::FindEdgeIndexInTri(VtxC, VtxA, OriginalTriangleA)
-					] = TriAEdgeLengthCA;
+						IndexUtil::FindEdgeIndexInTri(VtxD, VtxA, OriginalTriangleB)
+					] = TriBEdgeLengthDA;
 
-					EdgeLengths->SetValue(SplitInfo.OriginalTriangles.A, TriangleEdgeLengths);
-
-
-					if (!SplitInfo.bIsBoundary)
-					{
-						EdgeLengths->GetValue(SplitInfo.OriginalTriangles.B, TriangleEdgeLengths);
-
-						// Original triangle B shrunk edge
-						TriangleEdgeLengths[
-							IndexUtil::FindEdgeIndexInTri(VtxA, VtxF, OriginalTriangleB)
-						] = TriBEdgeLengthAB * .5f;
-
-						// Original triangle B new edge
-						TriangleEdgeLengths[
-							IndexUtil::FindEdgeIndexInTri(VtxD, VtxF, OriginalTriangleB)
-						] = TriBEdgeLengthAB * .5f;
-
-						// Original triangle B unmodified edge
-						TriangleEdgeLengths[
-							IndexUtil::FindEdgeIndexInTri(VtxD, VtxA, OriginalTriangleB)
-						] = TriBEdgeLengthDA;
-
-						EdgeLengths->SetValue(SplitInfo.OriginalTriangles.B, TriangleEdgeLengths);
-					}
+					EdgeLengths->SetValue(SplitInfo.OriginalTriangles.B, TriangleEdgeLengths);
+				}
 
 
-					UE::Geometry::FIndex3i NewTriangleA = EditMesh.GetTriangle(SplitInfo.NewTriangles.A);
-					EdgeLengths->GetValue(SplitInfo.NewTriangles.A, TriangleEdgeLengths);
+				UE::Geometry::FIndex3i NewTriangleA = EditMesh.GetTriangle(SplitInfo.NewTriangles.A);
+				EdgeLengths->GetValue(SplitInfo.NewTriangles.A, TriangleEdgeLengths);
 
-					// New triangle A shrunk edge
+				// New triangle A shrunk edge
+				TriangleEdgeLengths[
+					IndexUtil::FindEdgeIndexInTri(VtxB, VtxF, NewTriangleA)
+				] = TriAEdgeLengthAB * .5f;
+
+				// New triangle A new edge
+				TriangleEdgeLengths[
+					IndexUtil::FindEdgeIndexInTri(VtxC, VtxF, NewTriangleA)
+				] = TriAEdgeLengthAB * .5f;
+
+				// New triangle A unmodified edge
+				TriangleEdgeLengths[
+					IndexUtil::FindEdgeIndexInTri(VtxB, VtxC, NewTriangleA)
+				] = TriAEdgeLengthBC;
+
+				EdgeLengths->SetValue(SplitInfo.NewTriangles.A, TriangleEdgeLengths);
+
+
+				if (!SplitInfo.bIsBoundary)
+				{
+					UE::Geometry::FIndex3i NewTriangleB = EditMesh.GetTriangle(SplitInfo.NewTriangles.B);
+					EdgeLengths->GetValue(SplitInfo.NewTriangles.B, TriangleEdgeLengths);
+
+					// New triangle B shrunk edge
 					TriangleEdgeLengths[
-						IndexUtil::FindEdgeIndexInTri(VtxB, VtxF, NewTriangleA)
-					] = TriAEdgeLengthAB * .5f;
+						IndexUtil::FindEdgeIndexInTri(VtxB, VtxF, NewTriangleB)
+					] = TriBEdgeLengthAB * .5f;
 
-					// New triangle A new edge
+					// New triangle B new edge
 					TriangleEdgeLengths[
-						IndexUtil::FindEdgeIndexInTri(VtxC, VtxF, NewTriangleA)
-					] = TriAEdgeLengthAB * .5f;
+						IndexUtil::FindEdgeIndexInTri(VtxD, VtxF, NewTriangleB)
+					] = TriBEdgeLengthAB * .5f;
 
-					// New triangle A unmodified edge
+					// New triangle B unmodified edge
 					TriangleEdgeLengths[
-						IndexUtil::FindEdgeIndexInTri(VtxB, VtxC, NewTriangleA)
-					] = TriAEdgeLengthBC;
+						IndexUtil::FindEdgeIndexInTri(VtxB, VtxD, NewTriangleB)
+					] = TriBEdgeLengthBD;
 
-					EdgeLengths->SetValue(SplitInfo.NewTriangles.A, TriangleEdgeLengths);
-
-
-					if (!SplitInfo.bIsBoundary)
-					{
-						UE::Geometry::FIndex3i NewTriangleB = EditMesh.GetTriangle(SplitInfo.NewTriangles.B);
-						EdgeLengths->GetValue(SplitInfo.NewTriangles.B, TriangleEdgeLengths);
-
-						// New triangle B shrunk edge
-						TriangleEdgeLengths[
-							IndexUtil::FindEdgeIndexInTri(VtxB, VtxF, NewTriangleB)
-						] = TriBEdgeLengthAB * .5f;
-
-						// New triangle B new edge
-						TriangleEdgeLengths[
-							IndexUtil::FindEdgeIndexInTri(VtxD, VtxF, NewTriangleB)
-						] = TriBEdgeLengthAB * .5f;
-
-						// New triangle B unmodified edge
-						TriangleEdgeLengths[
-							IndexUtil::FindEdgeIndexInTri(VtxB, VtxD, NewTriangleB)
-						] = TriBEdgeLengthBD;
-
-						EdgeLengths->SetValue(SplitInfo.NewTriangles.B, TriangleEdgeLengths);
-					}
+					EdgeLengths->SetValue(SplitInfo.NewTriangles.B, TriangleEdgeLengths);
 				}
 			}
+
 
 			float DT = DeltaSeconds;
 
 			FlushPersistentDebugLines(World);
 
-			{
-				// Adjust Edge Length Constraints
 
-				TRACE_CPUPROFILER_EVENT_SCOPE_STR("Adjust Edge Length Constraints");
+			// Adjust Edge Length Constraints
 
-				for (int32 TriangleID : EditMesh.TriangleIndicesItr())
+			ParallelFor(EditMesh.MaxTriangleID(), [&](int32 TriangleID)
 				{
+					TRACE_CPUPROFILER_EVENT_SCOPE_STR("Adjust Edge Length Constraints");
+
+					if (!EditMesh.IsTriangle(TriangleID))
+					{
+						return;
+					}
+
 					UE::Geometry::FIndex3i Triangle = EditMesh.GetTriangle(TriangleID);
 					FVector3d VertexA = EditMesh.GetVertex(Triangle[0]);
 					FVector3d VertexB = EditMesh.GetVertex(Triangle[1]);
@@ -318,9 +326,9 @@ UDynamicMesh* SolveConstraintsStep(
 					//float ValueB = FMath::PerlinNoise3D(MidpointB * PerlinScale - .5f);
 					//float ValueC = FMath::PerlinNoise3D(MidpointC * PerlinScale - .5f);
 
-					float ValueA = FMath::Clamp(MidpointA[0] * PerlinScale, -1.0f, 1.0f);
-					float ValueB = FMath::Clamp(MidpointB[0] * PerlinScale, -1.0f, 1.0f);
-					float ValueC = FMath::Clamp(MidpointC[0] * PerlinScale, -1.0f, 1.0f);
+					float ValueA = FMath::Clamp(MidpointA[2] * PerlinScale, -1.0f, 1.0f);
+					float ValueB = FMath::Clamp(MidpointB[2] * PerlinScale, -1.0f, 1.0f);
+					float ValueC = FMath::Clamp(MidpointC[2] * PerlinScale, -1.0f, 1.0f);
 
 					TriangleEdgeLengths[0] *= 1.0f + (ValueA * .5f + .5f) * DT * GrowthRate;
 					TriangleEdgeLengths[1] *= 1.0f + (ValueB * .5f + .5f) * DT * GrowthRate;
@@ -344,29 +352,25 @@ UDynamicMesh* SolveConstraintsStep(
 
 					EdgeLengths->SetValue(TriangleID, TriangleEdgeLengths);
 				}
-			}
+			);
 
 			// Calculate forces
 
+
+			// Reset Forces
+
 			{
-				// Reset Forces
-
 				TRACE_CPUPROFILER_EVENT_SCOPE_STR("Reset Forces");
-
-				for (int32 VertexID : EditMesh.VertexIndicesItr())
-				{
-					FVector3d Force{ 0 };
-					Forces->SetValue(VertexID, Force);
-				}
+				Forces->Initialize(0);
 			}
 
-			{
-				// Stretch constraint
 
-				TRACE_CPUPROFILER_EVENT_SCOPE_STR("Stretch constraint");
+			// Stretch constraint
 
-				ParallelFor(EditMesh.MaxVertexID(), [&](int32 VertexID)
+			ParallelFor(EditMesh.MaxVertexID(), [&](int32 VertexID)
 				{
+					TRACE_CPUPROFILER_EVENT_SCOPE_STR("Stretch constraint");
+
 					if (!EditMesh.IsVertex(VertexID))
 					{
 						return;
@@ -390,13 +394,13 @@ UDynamicMesh* SolveConstraintsStep(
 							EdgeLengths->GetValue(TriangleID, TriangleEdgeLengths);
 							float NewTargetEdgeLength = TriangleEdgeLengths[TriangleVertexIndex];
 
-							
+
 							FVector3d OtherPositionToPosition = Position - OtherPosition;
 							OtherPositionToPosition.Normalize();
 							OtherPositionToPosition *= NewTargetEdgeLength * (1.0f - EdgePullFactor);
 							TargetPosition = OtherPosition + OtherPositionToPosition;
 							FVector3d ThisForce = TargetPosition - Position;
-							
+
 
 							/*
 							FVector3d Direction = Position - OtherPosition;
@@ -420,23 +424,21 @@ UDynamicMesh* SolveConstraintsStep(
 					);
 
 					Forces->SetValue(VertexID, Force);
-				});
-			}
-
-			{
-				// Bend Constraint
-
-				TRACE_CPUPROFILER_EVENT_SCOPE_STR("Bend Constraint");
+				}
+			);
 
 
-				ParallelFor(EditMesh.MaxVertexID(), [&](int32 VertexID)
+			// Bend Constraint
+
+			ParallelFor(EditMesh.MaxVertexID(), [&](int32 VertexID)
 				{
+					TRACE_CPUPROFILER_EVENT_SCOPE_STR("Bend Constraint");
+
 					if (!EditMesh.IsVertex(VertexID))
 					{
 						return;
 					}
-				//for (int32 VertexID : EditMesh.VertexIndicesItr())
-				//{
+
 					FVector3d Position = EditMesh.GetVertex(VertexID);
 					FVector3d Force;
 					Forces->GetValue(VertexID, Force);
@@ -535,20 +537,24 @@ UDynamicMesh* SolveConstraintsStep(
 
 					Forces->SetValue(VertexID, Force);
 				});
-			}
 
-			{
-				// Verlet integration
 
-				TRACE_CPUPROFILER_EVENT_SCOPE_STR("Verlet integration");
+			// Verlet integration
 
-				for (int32 VertexID : EditMesh.VertexIndicesItr())
+			ParallelFor(EditMesh.MaxVertexID(), [&](int32 VertexID)
 				{
+					TRACE_CPUPROFILER_EVENT_SCOPE_STR("Verlet integration");
+
+					if (!EditMesh.IsVertex(VertexID))
+					{
+						return;
+					}
+
 					FVector3d PreviousPosition;
 					PreviousPositions->GetValue(VertexID, PreviousPosition);
 
 					FVector3d Position = EditMesh.GetVertex(VertexID);
-					
+
 					//FVector3d Velocity;
 					//Velocities->GetValue(VertexID, Velocity);
 
@@ -556,38 +562,16 @@ UDynamicMesh* SolveConstraintsStep(
 					Forces->GetValue(VertexID, Force);
 
 					PreviousPositions->SetValue(VertexID, Position);
-					
+
 					FVector3d Velocity = Position - PreviousPosition;
 					Position = Position + Velocity * (1.0f - DragCoefficient) + Force * (1.0f - DragCoefficient) * DT * DT;
 
-					DrawDebugLine(World, Position, PreviousPosition + Force, FColor::Green, true);
-					DrawDebugLine(World, Position, Position + Velocity, FColor::Red, true);
+					//DrawDebugLine(World, Position, PreviousPosition + Force, FColor::Green, true);
+					//DrawDebugLine(World, Position, Position + Velocity, FColor::Red, true);
 
 					EditMesh.SetVertex(VertexID, Position);
-
-					//Force -= Velocity * DragCoefficient;
-
-					//Force *= ForceMultiplier;
-
-					//for (int32 i = 0; i < Iterations; ++i)
-					//{
-						//FromPosition = PreviousPosition;
-
-						// Integrate
-						//PreviousPosition += Velocity * DT;
-						//PreviousPosition += Force * DT * DT * 0.5f;
-						//Velocity += Force * DT;
-						//	Velocity *= DragCoefficient;
-					//}
-
-
-					//Velocities->SetValue(VertexID, Velocity);
-
-					//float Alpha = FrameTimeAccumulator / SimDT;
-					//FVector3d Position = FMath::Lerp(FromPosition, PreviousPosition, Alpha);
-					//EditMesh.SetVertex(VertexID, Position);
 				}
-			}
+			);
 		}
 	);
 
