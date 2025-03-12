@@ -443,19 +443,21 @@ UDynamicMesh* SolveConstraintsStep(
 					FVector3d Force;
 					Forces->GetValue(VertexID, Force);
 
-					int32 TriangleIndex = 0;
-
 					EditMesh.EnumerateVertexTriangles(VertexID, [&](int32 TriangleID)
 						{
 							UE::Geometry::FIndex3i Triangle = EditMesh.GetTriangle(TriangleID);
-							int32 TriangleVertexIndex = (
-								Triangle[0] == VertexID ? 0 :
-								Triangle[1] == VertexID ? 1 :
-								2
-								);
+							int32 TriangleVertexIndex = IndexUtil::FindTriIndex(VertexID, Triangle);
 
 							UE::Geometry::FIndex3i Edges = EditMesh.GetTriEdges(TriangleID);
 							int32 OppositeEdgeID = Edges[(TriangleVertexIndex + 1) % 3];
+
+							UE::Geometry::FDynamicMesh3::FEdge Edge = EditMesh.GetEdge(OppositeEdgeID);
+							int32 OppositeTriangleID = Edge.Tri.A == TriangleID ? Edge.Tri.B : Edge.Tri.A;
+
+							if (!EditMesh.IsTriangle(OppositeTriangleID))
+							{
+								return;
+							}
 
 							int32 EdgeVertexIDA = Triangle[(TriangleVertexIndex + 1) % 3];
 							int32 EdgeVertexIDB = Triangle[(TriangleVertexIndex + 2) % 3];
@@ -463,76 +465,27 @@ UDynamicMesh* SolveConstraintsStep(
 							FVector3d EdgeVertexA = EditMesh.GetVertex(EdgeVertexIDA);
 							FVector3d EdgeVertexB = EditMesh.GetVertex(EdgeVertexIDB);
 
-							//if (VertexID == DebugVertexID && TriangleIndex == DebugTriangleIndex)
-							{
-								//DrawDebugLine(World, EdgeVertexA, EdgeVertexB, FColor::Green, true);
-							}
-
 							FVector3d EdgeNormal = EdgeVertexB - EdgeVertexA;
 							EdgeNormal.Normalize();
 
 							FVector3d ProjectedPosition = FVector::VectorPlaneProject(Position - EdgeVertexA, EdgeNormal);
 							ProjectedPosition.Normalize();
 
-							//if (VertexID == DebugVertexID && TriangleIndex == DebugTriangleIndex)
-							{
-								//DrawDebugLine(World, EdgeVertexA, EdgeVertexA + ProjectedPosition, FColor::Blue, true);
-							}
 
-							float ToRotate = 0;
-							int32 OppositeTriangleCount = 0;
+							UE::Geometry::FIndex3i OppositeTriangle = EditMesh.GetTriangle(OppositeTriangleID);
+							int32 OppositeVertexID = IndexUtil::FindTriOtherVtxUnsafe(EdgeVertexIDA, EdgeVertexIDB, OppositeTriangle);
 
-							EditMesh.EnumerateEdgeTriangles(OppositeEdgeID, [&](int32 OppositeTriangleID)
-								{
-									if (TriangleID == OppositeTriangleID)
-									{
-										return;
-									}
+							FVector3d OppositePosition = EditMesh.GetVertex(OppositeVertexID);
+							FVector3d OppositeProjectedPosition = FVector::VectorPlaneProject(OppositePosition - EdgeVertexA, EdgeNormal);
+							OppositeProjectedPosition.Normalize();
 
-									UE::Geometry::FIndex3i OppositeTriangle = EditMesh.GetTriangle(OppositeTriangleID);
-									int32 OppositeVertexID = (
-										OppositeTriangle[0] != EdgeVertexIDA && OppositeTriangle[0] != EdgeVertexIDB ? OppositeTriangle[0] :
-										OppositeTriangle[1] != EdgeVertexIDA && OppositeTriangle[1] != EdgeVertexIDB ? OppositeTriangle[1] :
-										OppositeTriangle[2]
-										);
+							float Angle = FMath::Acos(ProjectedPosition | OppositeProjectedPosition);
+							float Direction = FMath::Sign((OppositeProjectedPosition ^ ProjectedPosition) | EdgeNormal);
+							float ToRotate = (UE_PI - Angle) * Direction * .5f;
 
-									FVector3d OppositePosition = EditMesh.GetVertex(OppositeVertexID);
-									FVector3d OppositeProjectedPosition = FVector::VectorPlaneProject(OppositePosition - EdgeVertexA, EdgeNormal);
-									OppositeProjectedPosition.Normalize();
+							FVector3d RotatedPosition = (Position - EdgeVertexA).RotateAngleAxisRad(ToRotate, EdgeNormal) + EdgeVertexA;
 
-									//if (VertexID == DebugVertexID && TriangleIndex == DebugTriangleIndex)
-									{
-										//DrawDebugLine(World, EdgeVertexA, EdgeVertexA + OppositeProjectedPosition, FColor::Blue, true);
-									}
-
-									// we get stuck when faces invert, or even are < 90 degrees
-									float Angle = FMath::Acos(ProjectedPosition | OppositeProjectedPosition);
-									float Direction = FMath::Sign((OppositeProjectedPosition ^ ProjectedPosition) | EdgeNormal);
-									ToRotate += (UE_PI - Angle) * Direction * .5f;
-									OppositeTriangleCount++;
-								}
-							);
-
-							if (OppositeTriangleCount > 0)
-							{
-								ToRotate /= OppositeTriangleCount;
-								//ToRotate *= .0005f;
-
-								FVector3d RotatedPosition = (Position - EdgeVertexA).RotateAngleAxisRad(ToRotate, EdgeNormal) + EdgeVertexA;
-
-								//if (VertexID == DebugVertexID && TriangleIndex == DebugTriangleIndex)
-								{
-									//	DrawDebugPoint(World, Position, 10.1f, FColor::Red, true);
-								}
-
-								Force += RotatedPosition - Position;
-
-								//DrawDebugLine(World, Position, Position + Force, FColor::Yellow, true, -1.0f, 0, .05f);
-							}
-
-							//Force *= .2f;
-
-							TriangleIndex++;
+							Force += RotatedPosition - Position;
 						});
 
 					Forces->SetValue(VertexID, Force);
