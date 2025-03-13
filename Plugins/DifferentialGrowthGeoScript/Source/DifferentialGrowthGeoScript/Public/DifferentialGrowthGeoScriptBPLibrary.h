@@ -5,6 +5,7 @@
 #include "Kismet/BlueprintFunctionLibrary.h"
 #include "UDynamicMesh.h"
 #include "DynamicMesh/DynamicMeshOverlay.h"
+#include "DynamicMeshScalarVertexAttribute.h"
 #include "DifferentialGrowthGeoScriptBPLibrary.generated.h"
 
 /* 
@@ -52,6 +53,7 @@ class UDifferentialGrowthGeoScriptBPLibrary : public UBlueprintFunctionLibrary
 
 typedef UE::Geometry::TDynamicMeshVertexAttribute<float, 3> FVector3VertexAttribute;
 typedef UE::Geometry::TDynamicMeshTriangleAttribute<float, 3> FVector3TriangleAttribute;
+typedef UE::Geometry::TDynamicMeshScalarVertexAttribute<float> FloatVertexAttribute;
 
 //typedef UE::Geometry::TDynamicMeshVertexAttribute<float, 3> FDynamicMeshSolverPreviousPositionAttribute;
 //typedef UE::Geometry::TDynamicMeshVectorOverlay<float, 3, FVector3f> FDynamicMeshSolverForcesOverlay;

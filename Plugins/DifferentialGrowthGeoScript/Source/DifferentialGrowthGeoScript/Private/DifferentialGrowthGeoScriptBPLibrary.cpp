@@ -39,7 +39,7 @@ UDynamicMesh* SolveConstraintsStep(
 
 	// Add attributes 
 
-	//const FName VelocityAttributeName = "VelocityAttribute";
+	const FName GrowthRateAttributeName = "GrowthRateAttribute";
 	const FName PreviousPositionAttributeName = "PreviousPositionAttribute";
 	const FName ForcesAttributeName = "ForcesAttribute";
 	const FName EdgeLengthAttributeName = "EdgeLengthAttribute";
@@ -60,11 +60,17 @@ UDynamicMesh* SolveConstraintsStep(
 				FrameTimeAccumulator = 0;
 			}
 
-			/*if (!EditMesh.Attributes()->HasAttachedAttribute(VelocityAttributeName))
+			if (!EditMesh.Attributes()->HasAttachedAttribute(GrowthRateAttributeName))
 			{
-				FVector3VertexAttribute* Velocities = new FVector3VertexAttribute(&EditMesh);
-				EditMesh.Attributes()->AttachAttribute(VelocityAttributeName, Velocities);
-			}*/
+				FloatVertexAttribute* GrowthRates = new FloatVertexAttribute(&EditMesh);
+				
+				for (int32 VertexID : EditMesh.VertexIndicesItr())
+				{
+					GrowthRates->SetValue(VertexID, 0.0f);
+				}
+				
+				EditMesh.Attributes()->AttachAttribute(GrowthRateAttributeName, GrowthRates);
+			}
 
 			if (!EditMesh.Attributes()->HasAttachedAttribute(PreviousPositionAttributeName))
 			{
@@ -105,7 +111,7 @@ UDynamicMesh* SolveConstraintsStep(
 
 			// Get attributes
 
-			//FVector3VertexAttribute* Velocities = static_cast<FVector3VertexAttribute*>(EditMesh.Attributes()->GetAttachedAttribute(VelocityAttributeName));
+			FloatVertexAttribute* GrowthRates = static_cast<FloatVertexAttribute*>(EditMesh.Attributes()->GetAttachedAttribute(GrowthRateAttributeName));
 			FVector3VertexAttribute* PreviousPositions = static_cast<FVector3VertexAttribute*>(EditMesh.Attributes()->GetAttachedAttribute(PreviousPositionAttributeName));
 			FVector3VertexAttribute* Forces = static_cast<FVector3VertexAttribute*>(EditMesh.Attributes()->GetAttachedAttribute(ForcesAttributeName));
 			FVector3TriangleAttribute* EdgeLengths = static_cast<FVector3TriangleAttribute*>(EditMesh.Attributes()->GetAttachedAttribute(EdgeLengthAttributeName));
@@ -297,6 +303,32 @@ UDynamicMesh* SolveConstraintsStep(
 			FlushPersistentDebugLines(World);
 
 
+			// Adjust Growh Rates
+
+			ParallelFor(EditMesh.MaxVertexID(), [&](int32 VertexID)
+				{
+					TRACE_CPUPROFILER_EVENT_SCOPE_STR("Adjust Edge Length Constraints");
+
+					if (!EditMesh.IsVertex(VertexID))
+					{
+						return;
+					}
+
+					FVector3d Vertex = EditMesh.GetVertex(VertexID);
+
+					float PerlinScale = .03f;
+
+					float Value = FMath::PerlinNoise3D(Vertex * PerlinScale - .5f);
+
+					float Mask = FMath::Clamp(Vertex[2] * .01f, 0.0f, 1.0f);
+
+					Value *= Mask;
+
+					GrowthRates->SetValue(VertexID, Value);
+				}
+			);
+
+
 			// Adjust Edge Length Constraints
 
 			ParallelFor(EditMesh.MaxTriangleID(), [&](int32 TriangleID)
@@ -313,26 +345,24 @@ UDynamicMesh* SolveConstraintsStep(
 					FVector3d VertexB = EditMesh.GetVertex(Triangle[1]);
 					FVector3d VertexC = EditMesh.GetVertex(Triangle[2]);
 
+					float GrowthRateA = GrowthRates->GetValue(Triangle[0]);
+					float GrowthRateB = GrowthRates->GetValue(Triangle[1]);
+					float GrowthRateC = GrowthRates->GetValue(Triangle[2]);
+
 					FVector3d MidpointA = (VertexA + VertexB) * .5f;
 					FVector3d MidpointB = (VertexB + VertexC) * .5f;
 					FVector3d MidpointC = (VertexC + VertexA) * .5f;
 
+					float EdgeGrowthRateA = (GrowthRateA + GrowthRateB) * .5f;
+					float EdgeGrowthRateB = (GrowthRateB + GrowthRateC) * .5f;
+					float EdgeGrowthRateC = (GrowthRateC + GrowthRateA) * .5f;
+
 					FVector3d TriangleEdgeLengths;
 					EdgeLengths->GetValue(TriangleID, TriangleEdgeLengths);
 
-					float PerlinScale = .05f;
-
-					//float ValueA = FMath::PerlinNoise3D(MidpointA * PerlinScale - .5f);
-					//float ValueB = FMath::PerlinNoise3D(MidpointB * PerlinScale - .5f);
-					//float ValueC = FMath::PerlinNoise3D(MidpointC * PerlinScale - .5f);
-
-					float ValueA = FMath::Clamp(MidpointA[2] * PerlinScale, -1.0f, 1.0f);
-					float ValueB = FMath::Clamp(MidpointB[2] * PerlinScale, -1.0f, 1.0f);
-					float ValueC = FMath::Clamp(MidpointC[2] * PerlinScale, -1.0f, 1.0f);
-
-					TriangleEdgeLengths[0] *= 1.0f + (ValueA * .5f + .5f) * DT * GrowthRate;
-					TriangleEdgeLengths[1] *= 1.0f + (ValueB * .5f + .5f) * DT * GrowthRate;
-					TriangleEdgeLengths[2] *= 1.0f + (ValueC * .5f + .5f) * DT * GrowthRate;
+					TriangleEdgeLengths[0] *= 1.0f + (GrowthRateA * .5f + .5f) * DT * GrowthRate;
+					TriangleEdgeLengths[1] *= 1.0f + (GrowthRateB * .5f + .5f) * DT * GrowthRate;
+					TriangleEdgeLengths[2] *= 1.0f + (GrowthRateC * .5f + .5f) * DT * GrowthRate;
 
 					FVector3d Center = (VertexA + VertexB + VertexC) / 3.0f;
 					FVector3d DirectionA = VertexA - VertexB;
@@ -381,6 +411,13 @@ UDynamicMesh* SolveConstraintsStep(
 					Forces->GetValue(VertexID, Force);
 					FVector3d OtherPosition{ 0 };
 					FVector3d TargetPosition{ 0 };
+
+					float VertexGrowthRate = GrowthRates->GetValue(VertexID);
+
+					if (VertexGrowthRate <= 0.0f)
+					{
+						return;
+					}
 
 					EditMesh.EnumerateVertexTriangles(VertexID, [&](int32 TriangleID)
 						{
@@ -435,6 +472,13 @@ UDynamicMesh* SolveConstraintsStep(
 					TRACE_CPUPROFILER_EVENT_SCOPE_STR("Bend Constraint");
 
 					if (!EditMesh.IsVertex(VertexID))
+					{
+						return;
+					}
+
+					float VertexGrowthRate = GrowthRates->GetValue(VertexID);
+
+					if (VertexGrowthRate <= 0.0f)
 					{
 						return;
 					}
@@ -499,6 +543,13 @@ UDynamicMesh* SolveConstraintsStep(
 					TRACE_CPUPROFILER_EVENT_SCOPE_STR("Verlet integration");
 
 					if (!EditMesh.IsVertex(VertexID))
+					{
+						return;
+					}
+
+					float VertexGrowthRate = GrowthRates->GetValue(VertexID);
+
+					if (VertexGrowthRate <= 0.0f)
 					{
 						return;
 					}
