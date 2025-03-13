@@ -517,7 +517,7 @@ UDynamicMesh* SolveConstraintsStep(
 					PreviousPositions->SetValue(VertexID, Position);
 
 					FVector3d Velocity = Position - PreviousPosition;
-					Position = Position + Velocity * (1.0f - DragCoefficient) + Force * (1.0f - DragCoefficient) * DT * DT;
+					Position = Position + Velocity * (1.0f - DragCoefficient) + Force * ForceMultiplier * DT * DT;
 
 					//DrawDebugLine(World, Position, PreviousPosition + Force, FColor::Green, true);
 					//DrawDebugLine(World, Position, Position + Velocity, FColor::Red, true);
