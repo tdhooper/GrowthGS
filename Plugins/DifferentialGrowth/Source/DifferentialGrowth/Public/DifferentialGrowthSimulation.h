@@ -68,6 +68,14 @@ protected:
 
 	virtual void Solve(float DeltaSeconds);
 
+	virtual void SplitLongEdges(FDynamicMesh3& EditMesh);
+
+	virtual void AdjustGrowthRates(FDynamicMesh3& EditMesh);
+
+	virtual void StretchConstraint(FDynamicMesh3& EditMesh, float DeltaSeconds);
+
+	virtual void BendConstraint(FDynamicMesh3& EditMesh);
+
 	virtual void Integrate(FDynamicMesh3& EditMesh, float DeltaSeconds);
 
 
