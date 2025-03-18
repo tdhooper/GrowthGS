@@ -1,13 +1,11 @@
 // Fill out your copyright notice in the Description page of Project Settings.
 
 #include "DifferentialGrowthSimulation.h"
+#include "GeometryScript/MeshNormalsFunctions.h"
 
 ADifferentialGrowthSimulation::ADifferentialGrowthSimulation()
 {
  	PrimaryActorTick.bCanEverTick = true;
-	
-	DynamicMeshComponent = CreateDefaultSubobject<UDynamicMeshComponent>(TEXT("DynamicMeshComponent"));
-
 	SimulationFramerate = 30.0f;
 	DragCoefficient = 0.05f;
 	ForceMultiplier = 10.0f;
@@ -72,7 +70,7 @@ void ADifferentialGrowthSimulation::BeginPlay()
 					PreviousPositionAttributes->SetValue(VertexID, Position);
 				}
 
-				EditMesh.Attributes()->AttachAttribute("PreviousPosition", ForceAttributes);
+				EditMesh.Attributes()->AttachAttribute("PreviousPosition", PreviousPositionAttributes);
 			}
 			else
 			{
@@ -138,11 +136,15 @@ void ADifferentialGrowthSimulation::Solve(float DeltaSeconds)
 		{
 			ForceAttributes->Initialize(0);
 			SplitLongEdges(EditMesh);
+			AdjustGrowthRates(EditMesh);
 			StretchConstraint(EditMesh, DeltaSeconds);
 			BendConstraint(EditMesh);
 			Integrate(EditMesh, DeltaSeconds);
 		}
 	);
+
+	FGeometryScriptCalculateNormalsOptions options;
+	UGeometryScriptLibrary_MeshNormalsFunctions::RecomputeNormals(TargetMesh, options);
 }
 
 void ADifferentialGrowthSimulation::SplitLongEdges(FDynamicMesh3& EditMesh)

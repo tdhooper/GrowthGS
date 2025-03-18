@@ -28,6 +28,7 @@ public class DifferentialGrowth : ModuleRules
 				"Core",
                 "GeometryCore",
                 "GeometryFramework",
+                "GeometryScriptingCore",
 				// ... add other public dependencies that you statically link with here ...
 			}
             );

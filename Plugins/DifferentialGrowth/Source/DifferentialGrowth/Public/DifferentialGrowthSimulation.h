@@ -3,7 +3,7 @@
 #pragma once
 
 #include "CoreMinimal.h"
-#include "GameFramework/Actor.h"
+#include "DynamicMeshActor.h"
 #include "UDynamicMesh.h"
 #include "Components/DynamicMeshComponent.h"
 #include "DynamicMeshScalarVertexAttribute.h"
@@ -14,14 +14,11 @@ typedef UE::Geometry::TDynamicMeshTriangleAttribute<float, 3> FVector3TriangleAt
 typedef UE::Geometry::TDynamicMeshScalarVertexAttribute<float> FloatVertexAttribute;
 
 UCLASS()
-class DIFFERENTIALGROWTH_API ADifferentialGrowthSimulation : public AActor
+class DIFFERENTIALGROWTH_API ADifferentialGrowthSimulation : public ADynamicMeshActor
 {
 	GENERATED_BODY()
 	
 public:	
-	UPROPERTY(VisibleAnywhere)
-	TObjectPtr<UDynamicMeshComponent> DynamicMeshComponent;
-
 	UPROPERTY(EditAnywhere)
 	float SimulationFramerate;
 
