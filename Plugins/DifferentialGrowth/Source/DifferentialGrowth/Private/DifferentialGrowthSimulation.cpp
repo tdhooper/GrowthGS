@@ -138,8 +138,8 @@ void ADifferentialGrowthSimulation::SetUpAttributes(FDynamicMesh3& EditMesh)
 void ADifferentialGrowthSimulation::Solve(FDynamicMesh3& EditMesh, float DeltaSeconds)
 {
 	ForceAttributes->Initialize(0);
-	SplitLongEdges(EditMesh);
 	AdjustGrowthRates(EditMesh);
+	SplitLongEdges(EditMesh);
 	StretchConstraint(EditMesh, DeltaSeconds);
 	BendConstraint(EditMesh);
 	Integrate(EditMesh, DeltaSeconds);
@@ -174,6 +174,16 @@ void ADifferentialGrowthSimulation::SplitLongEdges(FDynamicMesh3& EditMesh)
 		FVector3d TriangleEdgeLengths;
 
 		UE::Geometry::FDynamicMesh3::FEdge Edge = EditMesh.GetEdge(EdgeID);
+
+		if (
+			bRestrictSimulationToGrowthAreas
+			&& GrowthRateAttributes->GetValue(Edge.Vert.A) <= 0.0f
+			&& GrowthRateAttributes->GetValue(Edge.Vert.B) <= 0.0f
+		)
+		{
+			continue;
+		}
+
 		UE::Geometry::FIndex3i Triangle = EditMesh.GetTriangle(Edge.Tri[0]);
 
 		FVector3d VertexA = EditMesh.GetVertex(Triangle.A);
