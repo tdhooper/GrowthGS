@@ -536,7 +536,7 @@ void ADifferentialGrowthSimulation::BendConstraint(FDynamicMesh3& EditMesh)
 					OppositeProjectedPosition.Normalize();
 
 					float Angle = FMath::Acos(ProjectedPosition | OppositeProjectedPosition);
-					float Direction = FMath::Sign((OppositeProjectedPosition ^ ProjectedPosition) | EdgeNormal);
+					float Direction = ((OppositeProjectedPosition ^ ProjectedPosition) | EdgeNormal) < 0.0f ? -1.0f : 1.0f;
 					float ToRotate = (UE_PI - Angle) * Direction * .5f;
 
 					FVector3d RotatedPosition = (Position - EdgeVertexA).RotateAngleAxisRad(ToRotate, EdgeNormal) + EdgeVertexA;
