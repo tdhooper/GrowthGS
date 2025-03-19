@@ -7,6 +7,7 @@
 #include "UDynamicMesh.h"
 #include "Components/DynamicMeshComponent.h"
 #include "DynamicMeshScalarVertexAttribute.h"
+#include "GeometryScript/MeshNormalsFunctions.h"
 #include "DifferentialGrowthSimulation.generated.h"
 
 typedef UE::Geometry::TDynamicMeshVertexAttribute<float, 3> FVector3VertexAttribute;
@@ -63,7 +64,11 @@ protected:
 	// Called when the game starts or when spawned
 	virtual void BeginPlay() override;
 
-	virtual void Solve(float DeltaSeconds);
+	virtual void SetUpAttributes(FDynamicMesh3& EditMesh);
+
+	virtual void Solve(FDynamicMesh3& EditMesh, float DeltaSeconds);
+
+	virtual void RecomputeNormals(FDynamicMesh3& EditMesh, FGeometryScriptCalculateNormalsOptions CalculateOptions);
 
 	virtual void SplitLongEdges(FDynamicMesh3& EditMesh);
 

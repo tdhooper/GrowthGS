@@ -1,7 +1,7 @@
 // Fill out your copyright notice in the Description page of Project Settings.
 
 #include "DifferentialGrowthSimulation.h"
-#include "GeometryScript/MeshNormalsFunctions.h"
+#include "DynamicMesh/MeshNormals.h"
 
 ADifferentialGrowthSimulation::ADifferentialGrowthSimulation()
 {
@@ -24,90 +24,15 @@ void ADifferentialGrowthSimulation::BeginPlay()
 	Super::BeginPlay();
 
 	FrameTimeAccumulator = 0.0f;
-
-	// Setup attributes
-
-	UDynamicMesh* TargetMesh = DynamicMeshComponent->GetDynamicMesh();
-
-	TargetMesh->EditMesh([&](FDynamicMesh3& EditMesh)
-		{
-			EditMesh.EnableAttributes();
-
-			if (!EditMesh.Attributes()->HasAttachedAttribute("Force"))
-			{
-				ForceAttributes = new FVector3VertexAttribute(&EditMesh);
-				EditMesh.Attributes()->AttachAttribute("Force", ForceAttributes);
-			}
-			else
-			{
-				ForceAttributes = static_cast<FVector3VertexAttribute*>(EditMesh.Attributes()->GetAttachedAttribute("Force"));
-			}
-
-			if (!EditMesh.Attributes()->HasAttachedAttribute("GrowthRate"))
-			{
-				GrowthRateAttributes = new FloatVertexAttribute(&EditMesh);
-
-				for (int32 VertexID : EditMesh.VertexIndicesItr())
-				{
-					GrowthRateAttributes->SetValue(VertexID, 0.0f);
-				}
-
-				EditMesh.Attributes()->AttachAttribute("GrowthRate", GrowthRateAttributes);
-			}
-			else
-			{
-				GrowthRateAttributes = static_cast<FloatVertexAttribute*>(EditMesh.Attributes()->GetAttachedAttribute("GrowthRate"));
-			}
-
-
-			if (!EditMesh.Attributes()->HasAttachedAttribute("PreviousPosition"))
-			{
-				PreviousPositionAttributes = new FVector3VertexAttribute(&EditMesh);
-
-				for (int32 VertexID : EditMesh.VertexIndicesItr())
-				{
-					FVector3d Position = EditMesh.GetVertex(VertexID);
-					PreviousPositionAttributes->SetValue(VertexID, Position);
-				}
-
-				EditMesh.Attributes()->AttachAttribute("PreviousPosition", PreviousPositionAttributes);
-			}
-			else
-			{
-				PreviousPositionAttributes = static_cast<FVector3VertexAttribute*>(EditMesh.Attributes()->GetAttachedAttribute("PreviousPosition"));
-			}
-
-			if (!EditMesh.Attributes()->HasAttachedAttribute("EdgeLength"))
-			{
-				EdgeLengthAttributes = new FVector3TriangleAttribute(&EditMesh);
-
-				for (int32 TriangleID : EditMesh.TriangleIndicesItr())
-				{
-					UE::Geometry::FIndex3i Triangle = EditMesh.GetTriangle(TriangleID);
-					FVector3d VertexA = EditMesh.GetVertex(Triangle[0]);
-					FVector3d VertexB = EditMesh.GetVertex(Triangle[1]);
-					FVector3d VertexC = EditMesh.GetVertex(Triangle[2]);
-					FVector3d TriangleEdgeLengths{
-						(VertexA - VertexB).Length(),
-						(VertexB - VertexC).Length(),
-						(VertexC - VertexA).Length()
-					};
-					EdgeLengthAttributes->SetValue(TriangleID, TriangleEdgeLengths);
-				}
-
-				EditMesh.Attributes()->AttachAttribute("EdgeLength", EdgeLengthAttributes);
-			}
-			else
-			{
-				EdgeLengthAttributes = static_cast<FVector3TriangleAttribute*>(EditMesh.Attributes()->GetAttachedAttribute("EdgeLength"));
-			}
-		}
-	);
 }
 
 void ADifferentialGrowthSimulation::Tick(float DeltaTime)
 {
 	Super::Tick(DeltaTime);
+
+	UDynamicMesh* TargetMesh = DynamicMeshComponent->GetDynamicMesh();
+
+	if (TargetMesh == nullptr) return;
 
 	float SimDT = 1.0f / SimulationFramerate;
 
@@ -118,33 +43,119 @@ void ADifferentialGrowthSimulation::Tick(float DeltaTime)
 
 	int Iterations = 0;
 
-	while (FrameTimeAccumulator > SimDT)
+	// TODO: Allow each step to add a EDynamicMeshAttributeChangeFlags
+	TargetMesh->EditMesh([&](FDynamicMesh3& EditMesh)
+		{
+			SetUpAttributes(EditMesh);
+
+			while (FrameTimeAccumulator > SimDT)
+			{
+				Solve(EditMesh, SimDT);
+				FrameTimeAccumulator -= SimDT;
+				Iterations++;
+			}
+
+			FGeometryScriptCalculateNormalsOptions CalculateNormalsOptions;
+			RecomputeNormals(EditMesh, CalculateNormalsOptions);
+		}
+	);
+}
+
+void ADifferentialGrowthSimulation::SetUpAttributes(FDynamicMesh3& EditMesh)
+{
+	EditMesh.EnableAttributes();
+
+	if (!EditMesh.Attributes()->HasAttachedAttribute("Force"))
 	{
-		Solve(SimDT);
-		FrameTimeAccumulator -= SimDT;
-		Iterations++;
+		ForceAttributes = new FVector3VertexAttribute(&EditMesh);
+		EditMesh.Attributes()->AttachAttribute("Force", ForceAttributes);
+	}
+	else if (ForceAttributes == nullptr)
+	{
+		ForceAttributes = static_cast<FVector3VertexAttribute*>(EditMesh.Attributes()->GetAttachedAttribute("Force"));
+	}
+
+	if (!EditMesh.Attributes()->HasAttachedAttribute("GrowthRate"))
+	{
+		GrowthRateAttributes = new FloatVertexAttribute(&EditMesh);
+
+		for (int32 VertexID : EditMesh.VertexIndicesItr())
+		{
+			GrowthRateAttributes->SetValue(VertexID, 0.0f);
+		}
+
+		EditMesh.Attributes()->AttachAttribute("GrowthRate", GrowthRateAttributes);
+	}
+	else if (GrowthRateAttributes == nullptr)
+	{
+		GrowthRateAttributes = static_cast<FloatVertexAttribute*>(EditMesh.Attributes()->GetAttachedAttribute("GrowthRate"));
+	}
+
+
+	if (!EditMesh.Attributes()->HasAttachedAttribute("PreviousPosition"))
+	{
+		PreviousPositionAttributes = new FVector3VertexAttribute(&EditMesh);
+
+		for (int32 VertexID : EditMesh.VertexIndicesItr())
+		{
+			FVector3d Position = EditMesh.GetVertex(VertexID);
+			PreviousPositionAttributes->SetValue(VertexID, Position);
+		}
+
+		EditMesh.Attributes()->AttachAttribute("PreviousPosition", PreviousPositionAttributes);
+	}
+	else if (PreviousPositionAttributes == nullptr)
+	{
+		PreviousPositionAttributes = static_cast<FVector3VertexAttribute*>(EditMesh.Attributes()->GetAttachedAttribute("PreviousPosition"));
+	}
+
+	if (!EditMesh.Attributes()->HasAttachedAttribute("EdgeLength"))
+	{
+		EdgeLengthAttributes = new FVector3TriangleAttribute(&EditMesh);
+
+		for (int32 TriangleID : EditMesh.TriangleIndicesItr())
+		{
+			UE::Geometry::FIndex3i Triangle = EditMesh.GetTriangle(TriangleID);
+			FVector3d VertexA = EditMesh.GetVertex(Triangle[0]);
+			FVector3d VertexB = EditMesh.GetVertex(Triangle[1]);
+			FVector3d VertexC = EditMesh.GetVertex(Triangle[2]);
+			FVector3d TriangleEdgeLengths{
+				(VertexA - VertexB).Length(),
+				(VertexB - VertexC).Length(),
+				(VertexC - VertexA).Length()
+			};
+			EdgeLengthAttributes->SetValue(TriangleID, TriangleEdgeLengths);
+		}
+
+		EditMesh.Attributes()->AttachAttribute("EdgeLength", EdgeLengthAttributes);
+	}
+	else if (EdgeLengthAttributes == nullptr)
+	{
+		EdgeLengthAttributes = static_cast<FVector3TriangleAttribute*>(EditMesh.Attributes()->GetAttachedAttribute("EdgeLength"));
 	}
 }
 
-void ADifferentialGrowthSimulation::Solve(float DeltaSeconds)
+void ADifferentialGrowthSimulation::Solve(FDynamicMesh3& EditMesh, float DeltaSeconds)
 {
-	UDynamicMesh* TargetMesh = DynamicMeshComponent->GetDynamicMesh();
+	ForceAttributes->Initialize(0);
+	SplitLongEdges(EditMesh);
+	AdjustGrowthRates(EditMesh);
+	StretchConstraint(EditMesh, DeltaSeconds);
+	BendConstraint(EditMesh);
+	Integrate(EditMesh, DeltaSeconds);
+}
 
-	if (TargetMesh == nullptr) return;
-
-	TargetMesh->EditMesh([&](FDynamicMesh3& EditMesh)
-		{
-			ForceAttributes->Initialize(0);
-			SplitLongEdges(EditMesh);
-			AdjustGrowthRates(EditMesh);
-			StretchConstraint(EditMesh, DeltaSeconds);
-			BendConstraint(EditMesh);
-			Integrate(EditMesh, DeltaSeconds);
-		}
-	);
-
-	FGeometryScriptCalculateNormalsOptions options;
-	UGeometryScriptLibrary_MeshNormalsFunctions::RecomputeNormals(TargetMesh, options);
+// Copied from MeshNormalsFunctions.cpp
+void ADifferentialGrowthSimulation::RecomputeNormals(FDynamicMesh3& EditMesh, FGeometryScriptCalculateNormalsOptions CalculateOptions)
+{
+	UE::Geometry::FMeshNormals MeshNormals(&EditMesh);
+	if (EditMesh.Attributes()->PrimaryNormals()->ElementCount() == 0)
+	{
+		//UE::Geometry::AppendWarning(Debug, EGeometryScriptErrorType::InvalidInputs, LOCTEXT("RecomputeNormals_NothingToRecompute", "RecomputeNormals: TargetMesh did not have normals to recompute; falling back to per-vertex normals. Consider using 'Set Mesh To Per Vertex Normals' or 'Compute Split Normals' instead."));
+		EditMesh.Attributes()->PrimaryNormals()->CreateFromPredicate([](int, int, int)->bool {return true;}, 0.0f);
+	}
+	MeshNormals.RecomputeOverlayNormals(EditMesh.Attributes()->PrimaryNormals(), CalculateOptions.bAreaWeighted, CalculateOptions.bAngleWeighted);
+	MeshNormals.CopyToOverlay(EditMesh.Attributes()->PrimaryNormals(), false);
 }
 
 void ADifferentialGrowthSimulation::SplitLongEdges(FDynamicMesh3& EditMesh)
