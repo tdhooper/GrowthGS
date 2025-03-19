@@ -21,6 +21,9 @@ class DIFFERENTIALGROWTH_API ADifferentialGrowthSimulation : public ADynamicMesh
 	
 public:	
 	UPROPERTY(EditAnywhere)
+	bool bSimulate;
+
+	UPROPERTY(EditAnywhere)
 	float SimulationFramerate;
 
 	UPROPERTY(EditAnywhere)

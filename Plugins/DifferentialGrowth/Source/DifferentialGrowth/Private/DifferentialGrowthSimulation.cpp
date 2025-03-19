@@ -6,6 +6,7 @@
 ADifferentialGrowthSimulation::ADifferentialGrowthSimulation()
 {
  	PrimaryActorTick.bCanEverTick = true;
+	bSimulate = true;
 	SimulationFramerate = 30.0f;
 	DragCoefficient = 0.05f;
 	ForceMultiplier = 10.0f;
@@ -30,6 +31,8 @@ void ADifferentialGrowthSimulation::Tick(float DeltaTime)
 {
 	Super::Tick(DeltaTime);
 
+	if (!bSimulate) return;
+
 	UDynamicMesh* TargetMesh = DynamicMeshComponent->GetDynamicMesh();
 
 	if (TargetMesh == nullptr) return;
@@ -41,8 +44,6 @@ void ADifferentialGrowthSimulation::Tick(float DeltaTime)
 
 	FrameTimeAccumulator += FrameTime;
 
-	int Iterations = 0;
-
 	// TODO: Allow each step to add a EDynamicMeshAttributeChangeFlags
 	TargetMesh->EditMesh([&](FDynamicMesh3& EditMesh)
 		{
@@ -52,7 +53,6 @@ void ADifferentialGrowthSimulation::Tick(float DeltaTime)
 			{
 				Solve(EditMesh, SimDT);
 				FrameTimeAccumulator -= SimDT;
-				Iterations++;
 			}
 
 			FGeometryScriptCalculateNormalsOptions CalculateNormalsOptions;
