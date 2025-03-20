@@ -50,6 +50,9 @@ public:
 	UPROPERTY(EditAnywhere, Category = "Forces|Stretch", DisplayName = "Pull Factor")
 	float StretchForceEdgePullFactor;
 
+	UPROPERTY(EditAnywhere, Category = "Forces|Stretch", DisplayName = "Show Debug")
+	bool bStretchForceDebugEnabled;
+
 	UPROPERTY(EditAnywhere, Category = "Forces|Bend", DisplayName = "Enabled")
 	bool bBendForceEnabled;
 
@@ -83,6 +86,7 @@ protected:
 
 	virtual void Integrate(FDynamicMesh3& EditMesh, float DeltaSeconds);
 
+	virtual void DrawDebugOverlays(UWorld* World, FDynamicMesh3& EditMesh);
 
 public:	
 	// Called every frame
