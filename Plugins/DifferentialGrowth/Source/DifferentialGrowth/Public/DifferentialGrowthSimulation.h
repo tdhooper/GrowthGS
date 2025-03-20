@@ -47,6 +47,9 @@ public:
 	UPROPERTY(EditAnywhere, Category="Forces|Stretch", DisplayName="Enabled")
 	bool bStretchForceEnabled;
 
+	UPROPERTY(EditAnywhere, Category = "Forces|Stretch", DisplayName = "Force")
+	float StretchForceMultiplier;
+
 	UPROPERTY(EditAnywhere, Category = "Forces|Stretch", DisplayName = "Pull Factor")
 	float StretchForceEdgePullFactor;
 
@@ -56,11 +59,15 @@ public:
 	UPROPERTY(EditAnywhere, Category = "Forces|Bend", DisplayName = "Enabled")
 	bool bBendForceEnabled;
 
+	UPROPERTY(EditAnywhere, Category = "Forces|Bend", DisplayName = "Force")
+	float BendForceMultiplier;
+
 	ADifferentialGrowthSimulation();
 
 protected:
 
 	float FrameTimeAccumulator;
+	bool bSimulationExploded;
 
 	FloatVertexAttribute* GrowthRateAttributes;
 	FVector3VertexAttribute* PreviousPositionAttributes;

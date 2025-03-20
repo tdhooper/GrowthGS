@@ -15,9 +15,12 @@ ADifferentialGrowthSimulation::ADifferentialGrowthSimulation()
     bGrowthEnabled = true;
     GrowthRate = 0.05f;
     bStretchForceEnabled = true;
+    StretchForceMultiplier = 1.0f;
     StretchForceEdgePullFactor = 0.5f;
     bStretchForceDebugEnabled = false;
     bBendForceEnabled = true;
+    BendForceMultiplier = 1.0f;
+    bSimulationExploded = false;
 }
 
 // Called when the game starts or when spawned
@@ -26,11 +29,19 @@ void ADifferentialGrowthSimulation::BeginPlay()
     Super::BeginPlay();
 
     FrameTimeAccumulator = 0.0f;
+    bSimulationExploded = false;
 }
 
 void ADifferentialGrowthSimulation::Tick(float DeltaTime)
 {
     Super::Tick(DeltaTime);
+
+    if (bSimulationExploded)
+    {
+        UE_LOG(LogTemp, Warning, TEXT("SimulationExploded"));
+        bSimulate = false;
+        bSimulationExploded = false;
+    }
 
     if (!bSimulate) return;
 
@@ -442,6 +453,10 @@ void ADifferentialGrowthSimulation::SplitLongEdges(FDynamicMesh3& EditMesh)
             EdgeLengthAttributes->SetValue(SplitInfo.NewTriangles.B, TriangleEdgeLengths);
         }
     }
+
+    UE_LOG(LogTemp, Warning, TEXT("MaxVertexID: %d"), EditMesh.MaxVertexID());
+    // 184584
+    // 473490
 }
 
 void ADifferentialGrowthSimulation::AdjustGrowthRates(FDynamicMesh3& EditMesh)
@@ -567,12 +582,13 @@ void ADifferentialGrowthSimulation::StretchConstraint(FDynamicMesh3& EditMesh, f
                     EdgeLengthAttributes->GetValue(TriangleID, TriangleEdgeLengths);
                     float NewTargetEdgeLength = TriangleEdgeLengths[TriangleVertexIndex];
 
-
+                    FVector3d Midpoint = (Position + OtherPosition) * .5f;
                     FVector3d OtherPositionToPosition = Position - OtherPosition;
-                    OtherPositionToPosition.Normalize();
-                    OtherPositionToPosition *= NewTargetEdgeLength * (1.0f - StretchForceEdgePullFactor);
-                    TargetPosition = OtherPosition + OtherPositionToPosition;
-                    Force += TargetPosition - Position;
+                    FVector3d Direction = OtherPositionToPosition;
+                    Direction.Normalize();
+                    TargetPosition = Midpoint + Direction * NewTargetEdgeLength * .5f - OtherPositionToPosition * StretchForceEdgePullFactor;
+
+                    Force += (TargetPosition - Position) * StretchForceMultiplier;
                 }
             );
 
@@ -648,7 +664,7 @@ void ADifferentialGrowthSimulation::BendConstraint(FDynamicMesh3& EditMesh)
 
                     FVector3d RotatedPosition = (Position - EdgeVertexA).RotateAngleAxisRad(ToRotate, EdgeNormal) + EdgeVertexA;
 
-                    Force += RotatedPosition - Position;
+                    Force += (RotatedPosition - Position) * BendForceMultiplier;
                 });
 
             ForceAttributes->SetValue(VertexID, Force);
@@ -684,7 +700,17 @@ void ADifferentialGrowthSimulation::Integrate(FDynamicMesh3& EditMesh, float Del
             ForceAttributes->GetValue(VertexID, Force);
 
             FVector3d Velocity = Position - PreviousPosition;
-            Position = Position + Velocity * (1.0f - DragCoefficient) + Force * ForceMultiplier * DeltaSeconds * DeltaSeconds;
+            FVector3d Move = Velocity * (1.0f - DragCoefficient) + Force * ForceMultiplier * DeltaSeconds * DeltaSeconds;
+            
+            // Simulation has gone exponential, the change in velocity is greater than the velocity
+            // TODO: Can we get rid of the length > 1 check?
+            if (Velocity.Length() > 1 && Move.Length() > Velocity.Length() * 2.0f)
+            {
+                bSimulationExploded = true;
+                return;
+            }
+           
+            Position += Move;
 
             EditMesh.SetVertex(VertexID, Position);
         }
